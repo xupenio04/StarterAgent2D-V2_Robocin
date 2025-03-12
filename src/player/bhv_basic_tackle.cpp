@@ -150,7 +150,6 @@ Bhv_BasicTackle::executeOld( PlayerAgent * agent )
 {
     const WorldModel & wm = agent->world();
     const ServerParam & SP = ServerParam::i();
-
     double tackle_power = SP.maxTacklePower();
 
     if ( wm.self().body().abs() < M_body_thr )

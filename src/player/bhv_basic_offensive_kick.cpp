@@ -54,6 +54,36 @@ using namespace rcsc;
 /*!
 
  */
+
+
+bool IsSafeArea(const WorldModel &wm, const Sector2D area, const AbstractPlayerObject * player){
+    if(area.contains(player->pos())){
+        return false;
+    }
+
+    return true;
+}
+
+int countPlayerInArea(const WorldModel &wm, const Sector2D &area) 
+{
+    Vector2D ball_pos = wm.ball().pos();
+    int counter = 0;
+    for (int u = 1; u <= 11; u++)
+    {
+        const AbstractPlayerObject *tm = wm.theirPlayer(u);
+        if (tm == NULL || tm->unum() < 1 )
+            continue;
+        Vector2D tm_pos = tm->pos();
+        if (tm->pos().dist(ball_pos) > 30)
+            continue;
+        if (!IsSafeArea(wm, area, tm))
+        {
+            counter++;
+        }
+    }
+    return counter;
+}
+
 bool Bhv_BasicOffensiveKick::execute(PlayerAgent *agent)
 {
     dlog.addText(Logger::TEAM,
@@ -126,60 +156,101 @@ bool Bhv_BasicOffensiveKick::pass(PlayerAgent *agent, int kick_count)
     const WorldModel &wm = agent->world();
     std::vector<Vector2D> targets;
     Vector2D ball_pos = wm.ball().pos();
+    const ServerParam & sp = ServerParam::i();
+     
+    sp.defaultPlayerSpeedMax();
     for (int u = 1; u <= 11; u++)
     {
         const AbstractPlayerObject *tm = wm.ourPlayer(u);
-        if (tm == NULL || tm->unum() < 1 || tm->unum() == wm.self().unum())
+        if (!tm || tm->unum() < 1 || tm->unum() == wm.self().unum())
             continue;
+
         Vector2D tm_pos = tm->pos();
-        Vector2D tm_vel= tm->vel();
-        if (tm->pos().dist(ball_pos) > 30)
+        Vector2D tm_vel = tm->vel();
+
+        if (tm_pos.dist(ball_pos) > 30) // Muito longe para um passe eficiente
             continue;
 
-       double pass_time = tm_pos.dist(ball_pos)/2.5;
-       Vector2D future_tm_pos = tm_pos + tm_vel * pass_time;
-       
-       Sector2D pass = Sector2D(ball_pos, 1, future_tm_pos.dist(ball_pos) + 3, (future_tm_pos - ball_pos).th() - 15, (future_tm_pos - ball_pos).th() + 15);
-       dlog.addSector(Logger::PASS, pass, "#FFFFFF"); 
+        // Previsão da posição futura do companheiro
+        
+        int teammate_arrival_time = wm.interceptTable().teammateStep();
+        int opponent_arrival_time = wm.interceptTable().opponentStep();  
+        Vector2D future_tm_pos = tm->inertiaPoint(teammate_arrival_time);
 
+        // Criar setor de passe baseado na posição futura
+        Sector2D pass = Sector2D(ball_pos, 1, future_tm_pos.dist(ball_pos) + 3, 
+                                 (future_tm_pos - ball_pos).th() - 15, 
+                                 (future_tm_pos - ball_pos).th() + 15);
+        dlog.addSector(Logger::PASS, pass, "#FFFFFF");
+        // Verificar se um adversário pode interceptar o passe
+        int opponent_unum = wm.getDistOpponentNearestToBall(5,true);
+        const AbstractPlayerObject *opponent = wm.theirPlayer(opponent_unum);
 
-       int opponent_steps = wm.interceptTable().opponentStep();
-       const AbstractPlayerObject *opponent = wm.theirPlayer(opponent_steps);
-
-       if (opponent)
+        if (opponent)
         {
-            double opponent_time = opponent->pos().dist(ball_pos) / opponent->vel().r(); // Tempo do adversário até a bola
-            if (opponent_time < pass_time) // Se o adversário chega antes, o passe não é seguro
+            int opponent_arrival_time = wm.interceptTable().opponentStep();  
+            Vector2D opponent_future_pos = opponent->inertiaPoint(opponent_arrival_time);
+
+            // Se o adversário chega antes ou ao mesmo tempo, o passe não é seguro
+            if (opponent_arrival_time <= teammate_arrival_time)
                 continue;
         }
 
-       if (!wm.existOpponentIn(pass, 5, true))
+        if (!wm.existOpponentIn(pass, 5, true))
         {
-            targets.push_back(tm_pos);
+            targets.push_back(future_tm_pos); // Armazena a posição futura do melhor passe
         }
-
-        
     }
-    if (targets.size() == 0){
-        agent->doTurn(180);
+
+    if (targets.empty()) 
+    {
+        // Em vez de girar aleatoriamente, gira para o teammate mais próximo
+        int nearest_teammate = wm.getDistTeammateNearestToSelf(5,true);
+        const AbstractPlayerObject *nearest_tm = wm.ourPlayer(nearest_teammate);
+
+        if (nearest_tm)
+        {
+            double angle_to_teammate = (nearest_tm->pos() - ball_pos).th().degree();
+            agent->doTurn(angle_to_teammate);
+            return true;
+        }
+        //else
+        //{
+          //  agent->doTurn(180); // Gira para observar novas opções
+            //return true;
+        //}
+
         return false;
     }
 
 
     Vector2D best_target = targets[0];
-    for (unsigned int i = 1; i < targets.size(); i++)
+    double best_score = -1000.0;
+
+    for (const Vector2D &target : targets)
     {
-        if (targets[i].x > best_target.x)
-            best_target = targets[i];
+        double dist_to_goal = 100 - target.x; // Distância ao gol adversário
+        double angle_to_goal = (target - ball_pos).th().degree(); // Ângulo do passe
+
+        // Definir pontuação baseada na posição, distância e ângulo
+        double score = (100 - dist_to_goal) - (angle_to_goal * 0.5);
+        
+        if (score > best_score)
+        {
+            best_score = score;
+            best_target = target;
+        }
     }
 
-
+    // Executa o passe para a melhor posição prevista
     if (wm.gameMode().type() != GameMode::PlayOn)
         Body_SmartKick(best_target, kick_count, 2.5, 1).execute(agent);
     else
         Body_SmartKick(best_target, kick_count, 2.5, 2).execute(agent);
+
     return true;
 }
+
 
 bool Bhv_BasicOffensiveKick::dribble(PlayerAgent *agent)
 {
