@@ -132,22 +132,48 @@ bool Bhv_BasicOffensiveKick::pass(PlayerAgent *agent, int kick_count)
         if (tm == NULL || tm->unum() < 1 || tm->unum() == wm.self().unum())
             continue;
         Vector2D tm_pos = tm->pos();
+        Vector2D tm_vel= tm->vel();
         if (tm->pos().dist(ball_pos) > 30)
             continue;
-        Sector2D pass = Sector2D(ball_pos, 1, tm_pos.dist(ball_pos) + 3, (tm_pos - ball_pos).th() - 15, (tm_pos - ball_pos).th() + 15);
-        if (!wm.existOpponentIn(pass, 5, true))
+
+       double pass_time = tm_pos.dist(ball_pos)/2.5;
+       Vector2D future_tm_pos = tm_pos + tm_vel * pass_time;
+       
+       Sector2D pass = Sector2D(ball_pos, 1, future_tm_pos.dist(ball_pos) + 3, (future_tm_pos - ball_pos).th() - 15, (future_tm_pos - ball_pos).th() + 15);
+       dlog.addSector(Logger::PASS, pass, "#FFFFFF"); 
+
+
+       int opponent_steps = wm.interceptTable().opponentStep();
+       const AbstractPlayerObject *opponent = wm.theirPlayer(opponent_steps);
+
+       if (opponent)
+        {
+            double opponent_time = opponent->pos().dist(ball_pos) / opponent->vel().r(); // Tempo do adversário até a bola
+            if (opponent_time < pass_time) // Se o adversário chega antes, o passe não é seguro
+                continue;
+        }
+
+       if (!wm.existOpponentIn(pass, 5, true))
         {
             targets.push_back(tm_pos);
         }
+
+        
     }
-    if (targets.size() == 0)
+    if (targets.size() == 0){
+        agent->doTurn(180);
         return false;
+    }
+
+
     Vector2D best_target = targets[0];
     for (unsigned int i = 1; i < targets.size(); i++)
     {
         if (targets[i].x > best_target.x)
             best_target = targets[i];
     }
+
+
     if (wm.gameMode().type() != GameMode::PlayOn)
         Body_SmartKick(best_target, kick_count, 2.5, 1).execute(agent);
     else
