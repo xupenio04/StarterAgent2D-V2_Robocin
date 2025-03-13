@@ -55,7 +55,6 @@ using namespace rcsc;
 
  */
 
-
 bool IsSafeArea(const WorldModel &wm, const Sector2D area, const AbstractPlayerObject * player){
     if(area.contains(player->pos())){
         return false;
@@ -64,7 +63,7 @@ bool IsSafeArea(const WorldModel &wm, const Sector2D area, const AbstractPlayerO
     return true;
 }
 
-int countPlayerInArea(const WorldModel &wm, const Sector2D &area) 
+int CountPlayerInArea(const WorldModel &wm, const Sector2D &area) 
 {
     Vector2D ball_pos = wm.ball().pos();
     int counter = 0;
@@ -83,6 +82,47 @@ int countPlayerInArea(const WorldModel &wm, const Sector2D &area)
     }
     return counter;
 }
+
+double pointToSegment(const WorldModel &wm, Vector2D& player, const AbstractPlayerObject *opponent){
+    Vector2D ball_pos = wm.ball().pos();
+    Vector2D opp_pos = opponent->pos();
+
+    // Calcula a distância do oponente à linha que liga a bola ao jogador
+    double segment_equation = std::fabs((player.y - ball_pos.y) * opp_pos.x
+                               - (player.x - ball_pos.x) * opp_pos.y
+                               + player.x * ball_pos.y
+                               - player.y * ball_pos.x);
+
+    double distance = std::sqrt(std::pow(player.y - ball_pos.y, 2)
+                                 + std::pow(player.x - ball_pos.x, 2));
+
+    if (distance == 0.0) return 0.0; // evita divisão por zero
+
+    return segment_equation/ distance;
+    
+}
+
+double NearestOpponentToLine(const WorldModel &wm, Vector2D& player){
+
+    Vector2D ball_pos = wm.ball().pos();
+    int nearest_dist_opponent = 30; 
+    for (int u = 1; u<=11; u++){
+        const AbstractPlayerObject *opponent = wm.theirPlayer(u);
+        if (opponent == NULL || opponent->unum() < 1)
+            continue;
+        Vector2D opp_pos = opponent->pos();
+        if (opp_pos.dist(ball_pos) > 30)
+            continue;
+        if ( pointToSegment(wm, player, opponent) < nearest_dist_opponent)
+        {
+            nearest_dist_opponent = pointToSegment(wm, player, opponent);
+        }
+    }
+    return nearest_dist_opponent;
+
+}
+
+
 
 bool Bhv_BasicOffensiveKick::execute(PlayerAgent *agent)
 {
@@ -156,102 +196,92 @@ bool Bhv_BasicOffensiveKick::pass(PlayerAgent *agent, int kick_count)
     const WorldModel &wm = agent->world();
     std::vector<Vector2D> targets;
     Vector2D ball_pos = wm.ball().pos();
-    const ServerParam & sp = ServerParam::i();
-     
-    sp.defaultPlayerSpeedMax();
+    const ServerParam & SP = ServerParam::i();
+    
+    //double speed_max =SP.defaultPlayerSpeedMax();
+
     for (int u = 1; u <= 11; u++)
     {
         const AbstractPlayerObject *tm = wm.ourPlayer(u);
-        if (!tm || tm->unum() < 1 || tm->unum() == wm.self().unum())
+        if (tm == NULL || tm->unum() < 1 || tm->unum() == wm.self().unum())
             continue;
-
         Vector2D tm_pos = tm->pos();
-        Vector2D tm_vel = tm->vel();
-
-        if (tm_pos.dist(ball_pos) > 30) // Muito longe para um passe eficiente
+        if (tm->pos().dist(ball_pos) > 30)
             continue;
-
-        // Previsão da posição futura do companheiro
-        
-        int teammate_arrival_time = wm.interceptTable().teammateStep();
-        int opponent_arrival_time = wm.interceptTable().opponentStep();  
-        Vector2D future_tm_pos = tm->inertiaPoint(teammate_arrival_time);
-
-        // Criar setor de passe baseado na posição futura
-        Sector2D pass = Sector2D(ball_pos, 1, future_tm_pos.dist(ball_pos) + 3, 
-                                 (future_tm_pos - ball_pos).th() - 15, 
-                                 (future_tm_pos - ball_pos).th() + 15);
-        dlog.addSector(Logger::PASS, pass, "#FFFFFF");
-        // Verificar se um adversário pode interceptar o passe
-        int opponent_unum = wm.getDistOpponentNearestToBall(5,true);
-        const AbstractPlayerObject *opponent = wm.theirPlayer(opponent_unum);
-
-        if (opponent)
-        {
-            int opponent_arrival_time = wm.interceptTable().opponentStep();  
-            Vector2D opponent_future_pos = opponent->inertiaPoint(opponent_arrival_time);
-
-            // Se o adversário chega antes ou ao mesmo tempo, o passe não é seguro
-            if (opponent_arrival_time <= teammate_arrival_time)
-                continue;
-        }
-
+        Sector2D pass = Sector2D(ball_pos, 1, tm_pos.dist(ball_pos) + 3, (tm_pos - ball_pos).th() - 15, (tm_pos - ball_pos).th() + 15);
         if (!wm.existOpponentIn(pass, 5, true))
         {
-            targets.push_back(future_tm_pos); // Armazena a posição futura do melhor passe
+            targets.push_back(tm_pos);
+        }
+    }
+   
+    const AbstractPlayerObject *best_teammate = NULL;
+Vector2D best_option;
+double best_safety_score = -1; 
+
+for (auto target : targets) {
+    const AbstractPlayerObject *teammate = NULL;
+
+    // Verifica se o target pertence a um jogador do time
+    for (int u = 1; u <= 11; u++) {
+        const AbstractPlayerObject *tm = wm.ourPlayer(u);
+        if (tm != NULL && tm->pos().dist(target) < 1.5) {  
+            teammate = tm;
+            break;
+        }
+    }
+    
+    if (teammate == NULL) continue;  
+
+    Sector2D target_sector(target, 1, 5, 0, 360); 
+    int opponents_near_target = CountPlayerInArea(wm, target_sector);
+
+    Vector2D self_to_target = wm.self().pos() - target;
+    double nearest_opponent_dist = NearestOpponentToLine(wm, target);
+    int opponents_in_path = 0;
+
+    for (int u = 1; u <= 11; u++) {
+        const AbstractPlayerObject *opponent = wm.theirPlayer(u);
+        if (opponent == NULL) continue;
+
+        double dist_opponent_segment = pointToSegment(wm, self_to_target, opponent);
+
+        if (dist_opponent_segment < 3.0) {  
+            opponents_in_path++;
         }
     }
 
-    if (targets.empty()) 
-    {
-        // Em vez de girar aleatoriamente, gira para o teammate mais próximo
-        int nearest_teammate = wm.getDistTeammateNearestToSelf(5,true);
-        const AbstractPlayerObject *nearest_tm = wm.ourPlayer(nearest_teammate);
+    // Ajustar o critério de escolha do passe
+    double safety_score = nearest_opponent_dist - (opponents_in_path * 2.0) - (opponents_near_target * 3.0);
 
-        if (nearest_tm)
-        {
-            double angle_to_teammate = (nearest_tm->pos() - ball_pos).th().degree();
-            agent->doTurn(angle_to_teammate);
-            return true;
-        }
-        //else
-        //{
-          //  agent->doTurn(180); // Gira para observar novas opções
-            //return true;
-        //}
-
-        return false;
+    if (safety_score > best_safety_score) {
+        best_safety_score = safety_score;
+        best_option = target;
+        best_teammate = teammate;
     }
-
-
-    Vector2D best_target = targets[0];
-    double best_score = -1000.0;
-
-    for (const Vector2D &target : targets)
-    {
-        double dist_to_goal = 100 - target.x; // Distância ao gol adversário
-        double angle_to_goal = (target - ball_pos).th().degree(); // Ângulo do passe
-
-        // Definir pontuação baseada na posição, distância e ângulo
-        double score = (100 - dist_to_goal) - (angle_to_goal * 0.5);
-        
-        if (score > best_score)
-        {
-            best_score = score;
-            best_target = target;
-        }
-    }
-
-    // Executa o passe para a melhor posição prevista
-    if (wm.gameMode().type() != GameMode::PlayOn)
-        Body_SmartKick(best_target, kick_count, 2.5, 1).execute(agent);
-    else
-        Body_SmartKick(best_target, kick_count, 2.5, 2).execute(agent);
-
-    return true;
 }
 
+// Se não encontrou um alvo válido, não faz o passe
+if (best_teammate == NULL) {
+    return false;
+}
 
+    if (targets.size() == 0)
+        return false;
+        //mVector2D best_target = targets[0];
+    
+ /*     for (unsigned int i = 1; i < targets.size(); i++)
+    {
+        if (targets[i].x > best_target.x)
+            best_target = targets[i];
+    }
+            */
+    if (wm.gameMode().type() != GameMode::PlayOn)
+        Body_SmartKick(best_option, kick_count, 2.5, 1).execute(agent);
+    else
+        Body_SmartKick(best_option, kick_count, 2.5, 2).execute(agent);
+    return true;
+}
 bool Bhv_BasicOffensiveKick::dribble(PlayerAgent *agent)
 {
     const WorldModel &wm = agent->world();
