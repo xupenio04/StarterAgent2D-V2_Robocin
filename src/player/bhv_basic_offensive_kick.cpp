@@ -124,34 +124,58 @@ bool Bhv_BasicOffensiveKick::shoot(rcsc::PlayerAgent *agent)
 bool Bhv_BasicOffensiveKick::pass(PlayerAgent *agent, int kick_count)
 {
     const WorldModel &wm = agent->world();
-    std::vector<Vector2D> targets;
+    // const ServerParam & sp = ServerParam::i();
+    // double velMax = sp.defaultPlayerSpeedMax();
+
+    std::vector<std::pair<int, Vector2D>> targets;
     Vector2D ball_pos = wm.ball().pos();
     for (int u = 1; u <= 11; u++)
     {
         const AbstractPlayerObject *tm = wm.ourPlayer(u);
-        if (tm == NULL || tm->unum() < 1 || tm->unum() == wm.self().unum())
+        if (tm == NULL || tm->unum() < 1 || tm->unum() == wm.self().unum()) // se sou eu ou se não é um teammate válido, passa
             continue;
+
+
         Vector2D tm_pos = tm->pos();
-        if (tm->pos().dist(ball_pos) > 30)
+        if (tm->pos().dist(ball_pos) > 30) // distante demais da bola
             continue;
-        Sector2D pass = Sector2D(ball_pos, 1, tm_pos.dist(ball_pos) + 3, (tm_pos - ball_pos).th() - 15, (tm_pos - ball_pos).th() + 15);
-        if (!wm.existOpponentIn(pass, 5, true))
-        {
-            targets.push_back(tm_pos);
+        
+        Sector2D pass = Sector2D(ball_pos, 1, tm_pos.dist(ball_pos) + 3, (tm_pos - ball_pos).th() - 30, (tm_pos - ball_pos).th() + 30);
+        dlog.addText(Logger::PASS,"Calculando targets");
+        for(int j = 0 ; j < 5; j++){
+            if(!wm.existOpponentIn(pass,j, true)){
+                targets.push_back(
+                    {j, tm_pos}
+                );
+            }
         }
     }
+
+    // Não tem nenhum target válido ele não vai fazer passe
     if (targets.size() == 0)
-        return false;
-    Vector2D best_target = targets[0];
-    for (unsigned int i = 1; i < targets.size(); i++)
-    {
-        if (targets[i].x > best_target.x)
+         return false;
+
+    std::pair<int,Vector2D> best_target = targets[0];
+    for(int i = 0; i < targets.size(); i++){
+        dlog.addText(Logger::PASS, std::to_string(best_target.first).c_str());
+        if(best_target.first > targets[i].first){
             best_target = targets[i];
+        }
+    }    // ordena de acordo com a menor intercepção
+    
+    for (unsigned int i = 1; i < targets.size(); i++)
+    {   if(best_target.first == targets[i].first){
+            if(best_target.second.x < targets[i].second.x){
+                best_target = targets[i];
+            }
     }
+    }
+
+    Vector2D chosen_target = best_target.second;
     if (wm.gameMode().type() != GameMode::PlayOn)
-        Body_SmartKick(best_target, kick_count, 2.5, 1).execute(agent);
+        Body_SmartKick(chosen_target, kick_count, 2.5, 1).execute(agent);
     else
-        Body_SmartKick(best_target, kick_count, 2.5, 2).execute(agent);
+        Body_SmartKick(chosen_target, kick_count, 2.5, 2).execute(agent);
     return true;
 }
 
