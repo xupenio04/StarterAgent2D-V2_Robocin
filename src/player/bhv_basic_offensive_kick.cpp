@@ -153,6 +153,12 @@ bool Bhv_BasicOffensiveKick::pass(PlayerAgent *agent, int kick_count)
             }
         
     }
+    const auto &opps = wm.opponentsFromBall();
+    const PlayerObject *nearest_opp = (opps.empty()
+                                           ? static_cast<PlayerObject *>(0)
+                                           : opps.front());
+
+    Vector2D interception_point  = nearest_opp->inertiaPoint(time_op_to_ball);
 
     // Não tem nenhum target válido ele não vai fazer passe
     if (targets.size() == 0)
@@ -161,7 +167,7 @@ bool Bhv_BasicOffensiveKick::pass(PlayerAgent *agent, int kick_count)
     double dist_opp_ball = time_op_to_ball * velMax;
     Vector2D best_target = targets[0];
     for(auto target : targets){
-        if(target.r() <= (dist_opp_ball - 1) && target.x > best_target.x){
+        if((target - interception_point).r() <= (dist_opp_ball - 1) && target.x > best_target.x){
             best_target = target;
         } else if (target.x > best_target.x){
             best_target = target;
