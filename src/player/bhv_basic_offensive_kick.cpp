@@ -215,14 +215,14 @@ bool Bhv_BasicOffensiveKick::pass(PlayerAgent *agent, int kick_count)
         }
     }
    
-    const AbstractPlayerObject *best_teammate = NULL;
+const AbstractPlayerObject *best_teammate = NULL;
 Vector2D best_option;
 double best_safety_score = -1; 
 
 for (auto target : targets) {
     const AbstractPlayerObject *teammate = NULL;
 
-    // Verifica se o target pertence a um jogador do time
+    // Encontrar o companheiro de equipe mais próximo do alvo
     for (int u = 1; u <= 11; u++) {
         const AbstractPlayerObject *tm = wm.ourPlayer(u);
         if (tm != NULL && tm->pos().dist(target) < 1.5) {  
@@ -233,10 +233,11 @@ for (auto target : targets) {
     
     if (teammate == NULL) continue;  
 
+    // Criar setor em torno do alvo para avaliar segurança
     Sector2D target_sector(target, 1, 5, 0, 360); 
     int opponents_near_target = CountPlayerInArea(wm, target_sector);
 
-    Vector2D self_to_target = wm.self().pos() - target;
+    Vector2D self_to_target = target - wm.self().pos();
     double nearest_opponent_dist = NearestOpponentToLine(wm, target);
     int opponents_in_path = 0;
 
@@ -246,13 +247,16 @@ for (auto target : targets) {
 
         double dist_opponent_segment = pointToSegment(wm, self_to_target, opponent);
 
+        // Se o oponente estiver muito perto da linha do passe, aumenta a contagem
         if (dist_opponent_segment < 3.0) {  
             opponents_in_path++;
         }
     }
 
-    // Ajustar o critério de escolha do passe
-    double safety_score = nearest_opponent_dist - (opponents_in_path * 2.0) - (opponents_near_target * 3.0);
+    double pass_distance = wm.self().pos().dist(target);
+    double pass_speed_bonus = (pass_distance < 15.0) ? 1.5 : 0.0;
+
+    double safety_score = nearest_opponent_dist - (opponents_in_path * 1.5) - (opponents_near_target * 2.0) + pass_speed_bonus;
 
     if (safety_score > best_safety_score) {
         best_safety_score = safety_score;
@@ -261,7 +265,6 @@ for (auto target : targets) {
     }
 }
 
-// Se não encontrou um alvo válido, não faz o passe
 if (best_teammate == NULL) {
     return false;
 }
