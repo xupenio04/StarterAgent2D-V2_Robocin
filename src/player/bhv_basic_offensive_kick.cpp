@@ -253,10 +253,10 @@ for (auto target : targets) {
         }
     }
 
-    double pass_distance = wm.self().pos().dist(target);
-    double pass_speed_bonus = (pass_distance < 15.0) ? 1.5 : 0.0;
+    //double pass_distance = wm.self().pos().dist(target);
+    //double pass_speed_bonus = (pass_distance < 15.0) ? 1.5 : 0.0;
 
-    double safety_score = nearest_opponent_dist - (opponents_in_path * 1.5) - (opponents_near_target * 2.0) + pass_speed_bonus;
+    double safety_score = nearest_opponent_dist - (opponents_in_path * 1.5) - (opponents_near_target * 2.0); //+ pass_speed_bonus;
 
     if (safety_score > best_safety_score) {
         best_safety_score = safety_score;
