@@ -198,7 +198,6 @@ bool Bhv_BasicOffensiveKick::pass(PlayerAgent *agent, int kick_count)
     Vector2D ball_pos = wm.ball().pos();
     const ServerParam & SP = ServerParam::i();
     
-    //double speed_max =SP.defaultPlayerSpeedMax();
 
     for (int u = 1; u <= 11; u++)
     {
@@ -215,14 +214,13 @@ bool Bhv_BasicOffensiveKick::pass(PlayerAgent *agent, int kick_count)
         }
     }
    
-const AbstractPlayerObject *best_teammate = NULL;
-Vector2D best_option;
-double best_safety_score = -1; 
+    const AbstractPlayerObject *best_teammate = NULL;
+    Vector2D best_option;
+    double best_safety_score = -1; 
 
 for (auto target : targets) {
     const AbstractPlayerObject *teammate = NULL;
 
-    // Encontrar o companheiro de equipe mais próximo do alvo
     for (int u = 1; u <= 11; u++) {
         const AbstractPlayerObject *tm = wm.ourPlayer(u);
         if (tm != NULL && tm->pos().dist(target) < 1.5) {  
@@ -233,7 +231,6 @@ for (auto target : targets) {
     
     if (teammate == NULL) continue;  
 
-    // Criar setor em torno do alvo para avaliar segurança
     Sector2D target_sector(target, 1, 5, 0, 360); 
     int opponents_near_target = CountPlayerInArea(wm, target_sector);
 
@@ -247,16 +244,13 @@ for (auto target : targets) {
 
         double dist_opponent_segment = pointToSegment(wm, self_to_target, opponent);
 
-        // Se o oponente estiver muito perto da linha do passe, aumenta a contagem
+
         if (dist_opponent_segment < 3.0) {  
             opponents_in_path++;
         }
     }
 
-    //double pass_distance = wm.self().pos().dist(target);
-    //double pass_speed_bonus = (pass_distance < 15.0) ? 1.5 : 0.0;
-
-    double safety_score = nearest_opponent_dist - (opponents_in_path * 1.5) - (opponents_near_target * 2.0); //+ pass_speed_bonus;
+    double safety_score = nearest_opponent_dist - (opponents_in_path * 1.5) - (opponents_near_target * 2.0); 
 
     if (safety_score > best_safety_score) {
         best_safety_score = safety_score;
@@ -265,20 +259,13 @@ for (auto target : targets) {
     }
 }
 
-if (best_teammate == NULL) {
-    return false;
-}
+    if (best_teammate == NULL) {
+        return false;
+    }
 
     if (targets.size() == 0)
         return false;
-        //mVector2D best_target = targets[0];
     
- /*     for (unsigned int i = 1; i < targets.size(); i++)
-    {
-        if (targets[i].x > best_target.x)
-            best_target = targets[i];
-    }
-            */
     if (wm.gameMode().type() != GameMode::PlayOn)
         Body_SmartKick(best_option, kick_count, 2.5, 1).execute(agent);
     else
